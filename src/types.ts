@@ -51,5 +51,6 @@ export type WorkerOutMessage =
   | { type: 'DEVICE_DETECTED'; device: ComputeDevice }
   | { type: 'EXTRACTING'; id: string }
   | { type: 'TRANSCRIBING'; id: string }
-  | { type: 'DONE'; id: string; segments: TranscriptSegment[] }
+  | { type: 'CHUNK_DONE'; id: string; segments: TranscriptSegment[]; chunkIndex: number; totalChunks: number }
+  | { type: 'DONE'; id: string }
   | { type: 'ERROR'; id: string; error: string };

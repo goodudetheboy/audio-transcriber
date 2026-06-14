@@ -89,19 +89,35 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
     const audio = await extractAudio(file);
 
     post({ type: 'TRANSCRIBING', id });
-    const result = await transcriber!(audio, {
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5,
-    });
 
-    const segments: TranscriptSegment[] = (result.chunks ?? []).map((c: { timestamp: [number, number | null]; text: string }) => ({
-      start: c.timestamp[0],
-      end: c.timestamp[1],
-      text: c.text.trim(),
-    }));
+    // Split audio into 5-minute chunks so results stream in incrementally
+    // and partial progress is preserved if the page closes mid-way.
+    const CHUNK_SAMPLES = 5 * 60 * 16000; // 5 min @ 16 kHz
+    const totalChunks = Math.ceil(audio.length / CHUNK_SAMPLES);
 
-    post({ type: 'DONE', id, segments });
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SAMPLES;
+      const chunk = audio.slice(start, start + CHUNK_SAMPLES);
+      const timeOffset = (start / 16000);
+
+      const result = await transcriber!(chunk, {
+        return_timestamps: true,
+        chunk_length_s: 30,
+        stride_length_s: 5,
+      });
+
+      const segments: TranscriptSegment[] = (result.chunks ?? [])
+        .map((c: { timestamp: [number, number | null]; text: string }) => ({
+          start: c.timestamp[0] + timeOffset,
+          end: c.timestamp[1] !== null ? c.timestamp[1] + timeOffset : null,
+          text: c.text.trim(),
+        }))
+        .filter((s: TranscriptSegment) => s.text.length > 0);
+
+      post({ type: 'CHUNK_DONE', id, segments, chunkIndex: i, totalChunks });
+    }
+
+    post({ type: 'DONE', id });
   } catch (err) {
     post({ type: 'ERROR', id, error: (err as Error).message ?? String(err) });
   }

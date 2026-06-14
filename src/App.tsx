@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { QueuedFile, TranscriptRecord, AppSettings, WorkerInMessage, WorkerOutMessage, ComputeDevice } from './types';
+import type { QueuedFile, TranscriptRecord, TranscriptSegment, AppSettings, WorkerInMessage, WorkerOutMessage, ComputeDevice } from './types';
 import { saveTranscript, getAllTranscripts, deleteTranscript } from './lib/storage';
 import DropZone from './components/DropZone';
 import FileQueue from './components/FileQueue';
@@ -25,9 +25,13 @@ export default function App() {
   const settingsRef = useRef(settings);
   const computeModeRef = useRef(computeMode);
   const processingRef = useRef<string | null>(null);
+  const filesRef = useRef(files);
+  // Accumulates segments across chunks keyed by file id
+  const chunkAccRef = useRef<Map<string, { segments: TranscriptSegment[]; createdAt: number; filename: string }>>(new Map());
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { computeModeRef.current = computeMode; }, [computeMode]);
+  useEffect(() => { filesRef.current = files; }, [files]);
 
   // Detect WebGPU at startup so the default device is accurate
   useEffect(() => {
@@ -83,26 +87,49 @@ export default function App() {
         return;
       }
 
+      if (msg.type === 'CHUNK_DONE') {
+        const file = filesRef.current.find(f => f.id === msg.id);
+        const filename = file?.file.name ?? chunkAccRef.current.get(msg.id)?.filename ?? 'audio';
+        const existing = chunkAccRef.current.get(msg.id) ?? { segments: [], createdAt: Date.now(), filename };
+        const allSegments = [...existing.segments, ...msg.segments];
+        chunkAccRef.current.set(msg.id, { segments: allSegments, createdAt: existing.createdAt, filename });
+
+        const record: TranscriptRecord = {
+          id: msg.id,
+          filename,
+          createdAt: existing.createdAt,
+          model: settingsRef.current.model,
+          computeMode: computeModeRef.current ?? 'wasm',
+          segments: allSegments,
+        };
+
+        saveTranscript(record).catch(console.error);
+
+        setHistory(h => {
+          const exists = h.some(r => r.id === msg.id);
+          return exists ? h.map(r => r.id === msg.id ? record : r) : [record, ...h];
+        });
+
+        if (msg.chunkIndex === 0) setActiveFileId(msg.id);
+
+        setFiles(prev => prev.map(f => f.id === msg.id ? {
+          ...f,
+          status: 'transcribing',
+          progress: (msg.chunkIndex + 1) / msg.totalChunks,
+          progressLabel: msg.totalChunks > 1
+            ? `Transcribing… chunk ${msg.chunkIndex + 1} of ${msg.totalChunks}`
+            : 'Transcribing…',
+          transcript: record,
+        } : f));
+        return;
+      }
+
       if (msg.type === 'DONE') {
         processingRef.current = null;
-        setFiles(prev => {
-          const queued = prev.find(f => f.id === msg.id);
-          if (!queued) return prev;
-          const record: TranscriptRecord = {
-            id: msg.id,
-            filename: queued.file.name,
-            createdAt: Date.now(),
-            model: settingsRef.current.model,
-            computeMode: computeModeRef.current ?? 'wasm',
-            segments: msg.segments,
-          };
-          saveTranscript(record).catch(console.error);
-          setHistory(h => [record, ...h]);
-          setActiveFileId(msg.id);
-          return prev.map(f =>
-            f.id === msg.id ? { ...f, status: 'done', progress: 1, progressLabel: undefined, transcript: record } : f,
-          );
-        });
+        chunkAccRef.current.delete(msg.id);
+        setFiles(prev => prev.map(f =>
+          f.id === msg.id ? { ...f, status: 'done', progress: 1, progressLabel: undefined } : f,
+        ));
         return;
       }
 
@@ -151,6 +178,7 @@ export default function App() {
   }, []);
 
   const removeFile = useCallback((id: string) => {
+    chunkAccRef.current.delete(id);
     setFiles(prev => prev.filter(f => f.id !== id));
     setActiveFileId(prev => (prev === id ? null : prev));
   }, []);
