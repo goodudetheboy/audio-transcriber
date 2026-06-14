@@ -1,0 +1,232 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { QueuedFile, TranscriptRecord, AppSettings, WorkerInMessage, WorkerOutMessage, ComputeDevice } from './types';
+import { saveTranscript, getAllTranscripts, deleteTranscript } from './lib/storage';
+import DropZone from './components/DropZone';
+import FileQueue from './components/FileQueue';
+import TranscriptViewer from './components/TranscriptViewer';
+import HistoryPanel from './components/HistoryPanel';
+import SettingsModal from './components/SettingsModal';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  model: 'Xenova/whisper-base.en',
+  device: 'webgpu',
+};
+
+export default function App() {
+  const [files, setFiles] = useState<QueuedFile[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [history, setHistory] = useState<TranscriptRecord[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [computeMode, setComputeMode] = useState<ComputeDevice | null>(null);
+
+  const workerRef = useRef<Worker | null>(null);
+  const settingsRef = useRef(settings);
+  const computeModeRef = useRef(computeMode);
+  const processingRef = useRef<string | null>(null);
+
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { computeModeRef.current = computeMode; }, [computeMode]);
+
+  // Detect WebGPU at startup so the default device is accurate
+  useEffect(() => {
+    if (!('gpu' in navigator)) {
+      setSettings(s => ({ ...s, device: 'wasm' }));
+    }
+  }, []);
+
+  // Load history from IndexedDB
+  useEffect(() => {
+    getAllTranscripts().then(setHistory).catch(console.error);
+  }, []);
+
+  // Initialize worker
+  useEffect(() => {
+    const worker = new Worker(
+      new URL('./workers/transcription.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+
+    worker.onmessage = (e: MessageEvent<WorkerOutMessage>) => {
+      const msg = e.data;
+
+      if (msg.type === 'MODEL_LOADING') {
+        setFiles(prev => prev.map(f =>
+          f.id === msg.id
+            ? { ...f, progressLabel: `Loading model… ${Math.round(msg.progress)}%`, progress: msg.progress / 100 }
+            : f,
+        ));
+        return;
+      }
+
+      if (msg.type === 'DEVICE_DETECTED') {
+        setComputeMode(msg.device);
+        return;
+      }
+
+      if (msg.type === 'EXTRACTING') {
+        setFiles(prev => prev.map(f =>
+          f.id === msg.id
+            ? { ...f, status: 'extracting', progressLabel: 'Extracting audio…', progress: 0 }
+            : f,
+        ));
+        return;
+      }
+
+      if (msg.type === 'TRANSCRIBING') {
+        setFiles(prev => prev.map(f =>
+          f.id === msg.id
+            ? { ...f, status: 'transcribing', progressLabel: 'Transcribing…', progress: 0 }
+            : f,
+        ));
+        return;
+      }
+
+      if (msg.type === 'DONE') {
+        processingRef.current = null;
+        setFiles(prev => {
+          const queued = prev.find(f => f.id === msg.id);
+          if (!queued) return prev;
+          const record: TranscriptRecord = {
+            id: msg.id,
+            filename: queued.file.name,
+            createdAt: Date.now(),
+            model: settingsRef.current.model,
+            computeMode: computeModeRef.current ?? 'wasm',
+            segments: msg.segments,
+          };
+          saveTranscript(record).catch(console.error);
+          setHistory(h => [record, ...h]);
+          setActiveFileId(msg.id);
+          return prev.map(f =>
+            f.id === msg.id ? { ...f, status: 'done', progress: 1, progressLabel: undefined, transcript: record } : f,
+          );
+        });
+        return;
+      }
+
+      if (msg.type === 'ERROR') {
+        processingRef.current = null;
+        setFiles(prev => prev.map(f =>
+          f.id === msg.id
+            ? { ...f, status: 'error', progressLabel: undefined, error: msg.error }
+            : f,
+        ));
+      }
+    };
+
+    workerRef.current = worker;
+    return () => worker.terminate();
+  }, []);
+
+  // Queue processor — picks the next pending file when nothing is running
+  useEffect(() => {
+    if (!workerRef.current || processingRef.current) return;
+    const next = files.find(f => f.status === 'pending');
+    if (!next) return;
+
+    processingRef.current = next.id;
+    setFiles(prev => prev.map(f =>
+      f.id === next.id ? { ...f, status: 'extracting', progressLabel: 'Starting…', progress: 0 } : f,
+    ));
+
+    workerRef.current.postMessage({
+      type: 'TRANSCRIBE',
+      id: next.id,
+      file: next.file,
+      model: settings.model,
+      device: settings.device,
+    } as WorkerInMessage);
+  }, [files, settings]);
+
+  const addFiles = useCallback((newFiles: File[]) => {
+    const items: QueuedFile[] = newFiles.map(file => ({
+      id: crypto.randomUUID(),
+      file,
+      status: 'pending',
+      progress: 0,
+    }));
+    setFiles(prev => [...prev, ...items]);
+  }, []);
+
+  const removeFile = useCallback((id: string) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+    setActiveFileId(prev => (prev === id ? null : prev));
+  }, []);
+
+  const handleDeleteHistory = useCallback(async (id: string) => {
+    await deleteTranscript(id);
+    setHistory(h => h.filter(r => r.id !== id));
+    setActiveFileId(prev => (prev === id ? null : prev));
+  }, []);
+
+  // Active transcript: prefer queue file's transcript, fall back to history
+  const activeTranscript =
+    files.find(f => f.id === activeFileId)?.transcript ??
+    history.find(r => r.id === activeFileId);
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="header-brand">
+          <svg width="28" height="28" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="64" height="64" rx="16" fill="#ff8a65"/>
+            <rect x="26" y="10" width="12" height="24" rx="6" fill="white"/>
+            <path d="M18 30c0 7.732 6.268 14 14 14s14-6.268 14-14" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+            <line x1="32" y1="44" x2="32" y2="52" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+            <line x1="24" y1="52" x2="40" y2="52" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+          Transcriber
+        </div>
+        <div className="header-actions">
+          {computeMode && (
+            <span className={`badge badge-${computeMode}`}>
+              {computeMode === 'webgpu' ? '⚡ GPU' : '⬜ CPU'}
+            </span>
+          )}
+          <button className="btn-icon" title="Settings" onClick={() => setShowSettings(true)}>
+            ⚙️
+          </button>
+          <button className="btn-secondary" onClick={() => setShowHistory(true)}>
+            History
+          </button>
+        </div>
+      </header>
+
+      <main className="main">
+        <DropZone onFiles={addFiles} hasFiles={files.length > 0} />
+
+        {files.length > 0 && (
+          <div className="workspace">
+            <FileQueue
+              files={files}
+              activeId={activeFileId}
+              onSelect={setActiveFileId}
+              onRemove={removeFile}
+            />
+            <TranscriptViewer transcript={activeTranscript} />
+          </div>
+        )}
+      </main>
+
+      {showHistory && (
+        <HistoryPanel
+          history={history}
+          activeId={activeFileId}
+          onSelect={id => { setActiveFileId(id); setShowHistory(false); }}
+          onDelete={handleDeleteHistory}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          onChange={setSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </div>
+  );
+}
