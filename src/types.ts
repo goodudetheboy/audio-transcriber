@@ -50,7 +50,7 @@ export type WorkerOutMessage =
   | { type: 'MODEL_LOADING'; id: string; progress: number; file: string }
   | { type: 'DEVICE_DETECTED'; device: ComputeDevice }
   | { type: 'EXTRACTING'; id: string }
-  | { type: 'TRANSCRIBING'; id: string }
+  | { type: 'TRANSCRIBING'; id: string; totalChunks: number }
   | { type: 'CHUNK_DONE'; id: string; segments: TranscriptSegment[]; chunkIndex: number; totalChunks: number }
   | { type: 'DONE'; id: string }
   | { type: 'ERROR'; id: string; error: string };

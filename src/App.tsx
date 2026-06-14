@@ -81,7 +81,14 @@ export default function App() {
       if (msg.type === 'TRANSCRIBING') {
         setFiles(prev => prev.map(f =>
           f.id === msg.id
-            ? { ...f, status: 'transcribing', progressLabel: 'Transcribing…', progress: 0 }
+            ? {
+                ...f,
+                status: 'transcribing',
+                progress: 0,
+                progressLabel: msg.totalChunks > 1
+                  ? `Transcribing… 0 of ${msg.totalChunks} chunks`
+                  : 'Transcribing…',
+              }
             : f,
         ));
         return;

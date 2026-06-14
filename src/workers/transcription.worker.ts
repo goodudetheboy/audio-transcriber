@@ -88,12 +88,10 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
     await ensureFFmpeg();
     const audio = await extractAudio(file);
 
-    post({ type: 'TRANSCRIBING', id });
-
-    // Split audio into 5-minute chunks so results stream in incrementally
-    // and partial progress is preserved if the page closes mid-way.
     const CHUNK_SAMPLES = 1 * 60 * 16000; // 1 min @ 16 kHz
     const totalChunks = Math.ceil(audio.length / CHUNK_SAMPLES);
+
+    post({ type: 'TRANSCRIBING', id, totalChunks });
 
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SAMPLES;
