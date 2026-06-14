@@ -93,8 +93,6 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
-      language: 'english',
-      task: 'transcribe',
     });
 
     const segments: TranscriptSegment[] = (result.chunks ?? []).map((c: { timestamp: [number, number | null]; text: string }) => ({
