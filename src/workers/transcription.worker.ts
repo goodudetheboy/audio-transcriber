@@ -1,6 +1,5 @@
 import { pipeline, env } from '@huggingface/transformers';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 import type { ModelId, ComputeDevice, TranscriptSegment, WorkerInMessage, WorkerOutMessage } from '../types';
 
 env.allowLocalModels = false;
@@ -26,13 +25,22 @@ async function ensureFFmpeg() {
 }
 
 async function extractAudio(file: File): Promise<Float32Array> {
-  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.bin';
-  const inputName = `input${ext}`;
+  const mountDir = '/input';
+  const inputPath = `${mountDir}/${file.name}`;
   const outputName = 'output.pcm';
 
-  await ffmpeg.writeFile(inputName, await fetchFile(file));
-  await ffmpeg.exec(['-i', inputName, '-ar', '16000', '-ac', '1', '-f', 'f32le', outputName]);
-  await ffmpeg.deleteFile(inputName);
+  // Mount the File directly (WORKERFS) instead of writeFile-ing it into MEMFS:
+  // writeFile copies the whole file into the wasm heap up front, which fails
+  // for multi-GB files. WORKERFS reads it lazily off disk as ffmpeg needs it.
+  await ffmpeg.createDir(mountDir);
+  await ffmpeg.mount(FFFSType.WORKERFS, { files: [file] }, mountDir);
+
+  try {
+    await ffmpeg.exec(['-i', inputPath, '-ar', '16000', '-ac', '1', '-f', 'f32le', outputName]);
+  } finally {
+    await ffmpeg.unmount(mountDir);
+    await ffmpeg.deleteDir(mountDir);
+  }
 
   const data = (await ffmpeg.readFile(outputName)) as Uint8Array;
   await ffmpeg.deleteFile(outputName);
