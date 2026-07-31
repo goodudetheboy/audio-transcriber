@@ -238,14 +238,16 @@ export default function App() {
       <main className="main">
         <DropZone onFiles={addFiles} hasFiles={files.length > 0} />
 
-        {files.length > 0 && (
-          <div className="workspace">
-            <FileQueue
-              files={files}
-              activeId={activeFileId}
-              onSelect={setActiveFileId}
-              onRemove={removeFile}
-            />
+        {(files.length > 0 || activeTranscript) && (
+          <div className={`workspace ${files.length === 0 ? 'workspace-single' : ''}`}>
+            {files.length > 0 && (
+              <FileQueue
+                files={files}
+                activeId={activeFileId}
+                onSelect={setActiveFileId}
+                onRemove={removeFile}
+              />
+            )}
             <TranscriptViewer transcript={activeTranscript} onUpdateTranscript={handleUpdateTranscript} />
           </div>
         )}
