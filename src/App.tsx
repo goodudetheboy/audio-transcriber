@@ -196,16 +196,23 @@ export default function App() {
     setActiveFileId(prev => (prev === id ? null : prev));
   }, []);
 
-  const handleUpdateTranscript = useCallback(async (updated: TranscriptRecord) => {
-    await saveTranscript(updated);
+  const handleUpdateTranscript = useCallback((updated: TranscriptRecord) => {
+    // Update state immediately (matching the CHUNK_DONE pattern above) rather than
+    // awaiting the IndexedDB write first — awaiting first leaves a window where a
+    // second edit fired before this one's state update lands would read stale props
+    // and clobber this edit when it saves.
     setHistory(h => (h.some(r => r.id === updated.id) ? h.map(r => (r.id === updated.id ? updated : r)) : [updated, ...h]));
     setFiles(prev => prev.map(f => (f.id === updated.id ? { ...f, transcript: updated } : f)));
+    saveTranscript(updated).catch(console.error);
   }, []);
 
   // Active transcript: prefer queue file's transcript, fall back to history
-  const activeTranscript =
-    files.find(f => f.id === activeFileId)?.transcript ??
-    history.find(r => r.id === activeFileId);
+  const activeFile = files.find(f => f.id === activeFileId);
+  const activeTranscript = activeFile?.transcript ?? history.find(r => r.id === activeFileId);
+  // Editing is only safe once transcription has fully finished — CHUNK_DONE messages
+  // rebuild files[].transcript straight from the raw worker output and would silently
+  // clobber any in-progress edits made while a file is still transcribing.
+  const activeTranscriptEditable = !activeFile || activeFile.status === 'done';
 
   return (
     <div className="app">
@@ -248,7 +255,11 @@ export default function App() {
                 onRemove={removeFile}
               />
             )}
-            <TranscriptViewer transcript={activeTranscript} onUpdateTranscript={handleUpdateTranscript} />
+            <TranscriptViewer
+              transcript={activeTranscript}
+              editable={activeTranscriptEditable}
+              onUpdateTranscript={handleUpdateTranscript}
+            />
           </div>
         )}
       </main>

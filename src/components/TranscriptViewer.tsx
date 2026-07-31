@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { TranscriptRecord } from '../types';
 import { segmentsToText } from '../lib/formatters';
 import { addSpeaker, assignSpeaker, mergeWithNext, removeSpeaker, renameSpeaker, splitSegmentAt } from '../lib/transcript';
@@ -7,12 +7,21 @@ import SpeakerRoster from './SpeakerRoster';
 
 interface Props {
   transcript?: TranscriptRecord;
+  editable: boolean;
   onUpdateTranscript: (updated: TranscriptRecord) => void;
 }
 
-export default function TranscriptViewer({ transcript, onUpdateTranscript }: Props) {
+export default function TranscriptViewer({ transcript, editable, onUpdateTranscript }: Props) {
   const [copied, setCopied] = useState(false);
   const [editMode, setEditMode] = useState(false);
+
+  // Reset transient view state whenever the active transcript changes (or edits
+  // become unavailable, e.g. the file resumed transcribing) so switching between
+  // files/history items never leaves a stale transcript stuck in edit mode.
+  useEffect(() => {
+    setEditMode(false);
+    setCopied(false);
+  }, [transcript?.id, editable]);
 
   const handleCopy = useCallback(async () => {
     if (!transcript) return;
@@ -73,6 +82,8 @@ export default function TranscriptViewer({ transcript, onUpdateTranscript }: Pro
           <div className="transcript-actions">
             <button
               className={editMode ? 'btn-secondary btn-active' : 'btn-secondary'}
+              disabled={!editable}
+              title={editable ? undefined : 'Editing is available once transcription finishes'}
               onClick={() => setEditMode(v => !v)}
             >
               {editMode ? 'Done editing' : 'Edit'}

@@ -80,7 +80,10 @@ export function assignSpeaker(
 
 export function addSpeaker(record: TranscriptRecord): TranscriptRecord {
   const speakers = record.speakers ?? [];
-  const speaker: Speaker = { id: crypto.randomUUID(), name: `Speaker ${speakers.length + 1}` };
+  const existingNames = new Set(speakers.map(s => s.name));
+  let n = speakers.length + 1;
+  while (existingNames.has(`Speaker ${n}`)) n++;
+  const speaker: Speaker = { id: crypto.randomUUID(), name: `Speaker ${n}` };
   return { ...record, speakers: [...speakers, speaker] };
 }
 
