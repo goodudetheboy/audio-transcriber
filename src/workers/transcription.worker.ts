@@ -114,6 +114,7 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
 
       const segments: TranscriptSegment[] = (result.chunks ?? [])
         .map((c: { timestamp: [number, number | null]; text: string }) => ({
+          id: crypto.randomUUID(),
           start: c.timestamp[0] + timeOffset,
           end: c.timestamp[1] !== null ? c.timestamp[1] + timeOffset : null,
           text: c.text.trim(),

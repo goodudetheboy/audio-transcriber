@@ -7,10 +7,17 @@ export type ComputeDevice = 'webgpu' | 'wasm';
 
 export type FileStatus = 'pending' | 'extracting' | 'transcribing' | 'done' | 'error';
 
+export interface Speaker {
+  id: string;
+  name: string;
+}
+
 export interface TranscriptSegment {
+  id: string;
   start: number;
   end: number | null;
   text: string;
+  speakerId?: string;
 }
 
 export interface TranscriptRecord {
@@ -20,6 +27,7 @@ export interface TranscriptRecord {
   model: ModelId;
   computeMode: ComputeDevice;
   segments: TranscriptSegment[];
+  speakers?: Speaker[];
 }
 
 export interface QueuedFile {

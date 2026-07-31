@@ -1,4 +1,4 @@
-import type { TranscriptSegment } from '../types';
+import type { Speaker, TranscriptSegment } from '../types';
 
 export function formatTimestamp(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -10,9 +10,13 @@ export function formatTimestamp(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function segmentsToText(segments: TranscriptSegment[]): string {
+export function segmentsToText(segments: TranscriptSegment[], speakers: Speaker[] = []): string {
   return segments
-    .map(s => `[${formatTimestamp(s.start)}] ${s.text}`)
+    .map(s => {
+      const speaker = speakers.find(sp => sp.id === s.speakerId);
+      const prefix = speaker ? `[${speaker.name}] ` : '';
+      return `${prefix}[${formatTimestamp(s.start)}] ${s.text}`;
+    })
     .join('\n');
 }
 

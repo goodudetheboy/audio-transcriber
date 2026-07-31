@@ -1,4 +1,5 @@
 import type { TranscriptRecord } from '../types';
+import { normalizeTranscript } from './transcript';
 
 const DB_NAME = 'transcriber-v1';
 const DB_VERSION = 1;
@@ -34,7 +35,7 @@ export async function getAllTranscripts(): Promise<TranscriptRecord[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
     const req = tx.objectStore(STORE).index('createdAt').getAll();
-    req.onsuccess = () => resolve((req.result as TranscriptRecord[]).reverse());
+    req.onsuccess = () => resolve((req.result as TranscriptRecord[]).reverse().map(normalizeTranscript));
     req.onerror = () => reject(req.error);
   });
 }

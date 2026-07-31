@@ -196,6 +196,12 @@ export default function App() {
     setActiveFileId(prev => (prev === id ? null : prev));
   }, []);
 
+  const handleUpdateTranscript = useCallback(async (updated: TranscriptRecord) => {
+    await saveTranscript(updated);
+    setHistory(h => (h.some(r => r.id === updated.id) ? h.map(r => (r.id === updated.id ? updated : r)) : [updated, ...h]));
+    setFiles(prev => prev.map(f => (f.id === updated.id ? { ...f, transcript: updated } : f)));
+  }, []);
+
   // Active transcript: prefer queue file's transcript, fall back to history
   const activeTranscript =
     files.find(f => f.id === activeFileId)?.transcript ??
@@ -240,7 +246,7 @@ export default function App() {
               onSelect={setActiveFileId}
               onRemove={removeFile}
             />
-            <TranscriptViewer transcript={activeTranscript} />
+            <TranscriptViewer transcript={activeTranscript} onUpdateTranscript={handleUpdateTranscript} />
           </div>
         )}
       </main>
