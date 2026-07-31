@@ -14,8 +14,8 @@ export function segmentsToText(segments: TranscriptSegment[], speakers: Speaker[
   return segments
     .map(s => {
       const speaker = speakers.find(sp => sp.id === s.speakerId);
-      const prefix = speaker ? `[${speaker.name}] ` : '';
-      return `${prefix}[${formatTimestamp(s.start)}] ${s.text}`;
+      const speakerTag = speaker ? ` [${speaker.name}]` : '';
+      return `[${formatTimestamp(s.start)}]${speakerTag} ${s.text}`;
     })
     .join('\n');
 }
