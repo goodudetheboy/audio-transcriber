@@ -70,6 +70,16 @@ export function mergeWithNext(segments: TranscriptSegment[], index: number): Tra
   return [...segments.slice(0, index), merged, ...segments.slice(index + 2)];
 }
 
+export function editSegmentText(
+  segments: TranscriptSegment[],
+  index: number,
+  text: string,
+): TranscriptSegment[] {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === segments[index]?.text) return segments;
+  return segments.map((seg, i) => (i === index ? { ...seg, text: trimmed } : seg));
+}
+
 export function assignSpeaker(
   segments: TranscriptSegment[],
   index: number,

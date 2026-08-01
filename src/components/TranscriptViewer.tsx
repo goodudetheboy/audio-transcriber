@@ -1,7 +1,15 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useReducer, useRef } from 'react';
 import type { TranscriptRecord } from '../types';
 import { segmentsToText } from '../lib/formatters';
-import { addSpeaker, assignSpeaker, mergeWithNext, removeSpeaker, renameSpeaker, splitSegmentAt } from '../lib/transcript';
+import {
+  addSpeaker,
+  assignSpeaker,
+  editSegmentText,
+  mergeWithNext,
+  removeSpeaker,
+  renameSpeaker,
+  splitSegmentAt,
+} from '../lib/transcript';
 import SegmentRow from './SegmentRow';
 import SpeakerRoster from './SpeakerRoster';
 
@@ -9,11 +17,74 @@ interface Props {
   transcript?: TranscriptRecord;
   editable: boolean;
   onUpdateTranscript: (updated: TranscriptRecord) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }
 
-export default function TranscriptViewer({ transcript, editable, onUpdateTranscript }: Props) {
+interface DraftState {
+  draft: TranscriptRecord | undefined;
+  undoStack: TranscriptRecord[];
+  redoStack: TranscriptRecord[];
+}
+
+type DraftAction =
+  | { type: 'RESYNC'; transcript: TranscriptRecord | undefined }
+  | { type: 'RESET'; transcript: TranscriptRecord | undefined }
+  | { type: 'COMMIT'; mutate: (r: TranscriptRecord) => TranscriptRecord }
+  | { type: 'UNDO' }
+  | { type: 'REDO' };
+
+function draftReducer(state: DraftState, action: DraftAction): DraftState {
+  switch (action.type) {
+    case 'RESYNC':
+      return state.undoStack.length > 0
+        ? state
+        : { draft: action.transcript, undoStack: [], redoStack: [] };
+    case 'RESET':
+      return { draft: action.transcript, undoStack: [], redoStack: [] };
+    case 'COMMIT': {
+      if (!state.draft) return state;
+      const next = action.mutate(state.draft);
+      if (next === state.draft) return state;
+      return { draft: next, undoStack: [...state.undoStack, state.draft], redoStack: [] };
+    }
+    case 'UNDO': {
+      if (state.undoStack.length === 0 || !state.draft) return state;
+      const prev = state.undoStack[state.undoStack.length - 1];
+      return {
+        draft: prev,
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, state.draft],
+      };
+    }
+    case 'REDO': {
+      if (state.redoStack.length === 0 || !state.draft) return state;
+      const next = state.redoStack[state.redoStack.length - 1];
+      return {
+        draft: next,
+        undoStack: [...state.undoStack, state.draft],
+        redoStack: state.redoStack.slice(0, -1),
+      };
+    }
+  }
+}
+
+export default function TranscriptViewer({ transcript, editable, onUpdateTranscript, onDirtyChange }: Props) {
   const [copied, setCopied] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [state, dispatch] = useReducer(
+    draftReducer,
+    transcript,
+    t => ({ draft: t, undoStack: [], redoStack: [] }),
+  );
+  const dirty = state.undoStack.length > 0;
+  const draft = state.draft;
+
+  const lastSyncedIdRef = useRef(transcript?.id);
+  useEffect(() => {
+    const idChanged = transcript?.id !== lastSyncedIdRef.current;
+    lastSyncedIdRef.current = transcript?.id;
+    dispatch(idChanged ? { type: 'RESET', transcript } : { type: 'RESYNC', transcript });
+  }, [transcript]);
 
   // Reset transient view state whenever the active transcript changes (or edits
   // become unavailable, e.g. the file resumed transcribing) so switching between
@@ -23,53 +94,100 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
     setCopied(false);
   }, [transcript?.id, editable]);
 
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo — bail out while a textarea is
+  // focused so native per-keystroke text undo isn't fought/overridden.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (document.activeElement instanceof HTMLTextAreaElement) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: 'UNDO' });
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault();
+        dispatch({ type: 'REDO' });
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
   const handleCopy = useCallback(async () => {
-    if (!transcript) return;
-    await navigator.clipboard.writeText(segmentsToText(transcript.segments, transcript.speakers ?? []));
+    if (!draft) return;
+    await navigator.clipboard.writeText(segmentsToText(draft.segments, draft.speakers ?? []));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [transcript]);
+  }, [draft]);
 
   const handleSave = useCallback(() => {
-    if (!transcript) return;
-    const text = segmentsToText(transcript.segments, transcript.speakers ?? []);
+    if (!draft) return;
+    const text = segmentsToText(draft.segments, draft.speakers ?? []);
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = transcript.filename.replace(/\.[^.]+$/, '') + '_transcript.txt';
+    a.download = draft.filename.replace(/\.[^.]+$/, '') + '_transcript.txt';
     a.click();
     URL.revokeObjectURL(url);
-  }, [transcript]);
+  }, [draft]);
 
   const handleSplit = (index: number, cursorPos: number) => {
-    if (!transcript) return;
-    onUpdateTranscript({ ...transcript, segments: splitSegmentAt(transcript.segments, index, cursorPos) });
+    dispatch({ type: 'COMMIT', mutate: r => ({ ...r, segments: splitSegmentAt(r.segments, index, cursorPos) }) });
   };
 
   const handleMergeNext = (index: number) => {
-    if (!transcript) return;
-    onUpdateTranscript({ ...transcript, segments: mergeWithNext(transcript.segments, index) });
+    dispatch({ type: 'COMMIT', mutate: r => ({ ...r, segments: mergeWithNext(r.segments, index) }) });
+  };
+
+  const handleTextChange = (index: number, text: string) => {
+    dispatch({
+      type: 'COMMIT',
+      mutate: r => {
+        const segments = editSegmentText(r.segments, index, text);
+        return segments === r.segments ? r : { ...r, segments };
+      },
+    });
   };
 
   const handleAssignSpeaker = (index: number, speakerId: string | undefined) => {
-    if (!transcript) return;
-    onUpdateTranscript({ ...transcript, segments: assignSpeaker(transcript.segments, index, speakerId) });
+    dispatch({ type: 'COMMIT', mutate: r => ({ ...r, segments: assignSpeaker(r.segments, index, speakerId) }) });
   };
 
   const handleAddSpeaker = () => {
-    if (!transcript) return;
-    onUpdateTranscript(addSpeaker(transcript));
+    dispatch({ type: 'COMMIT', mutate: r => addSpeaker(r) });
   };
 
   const handleRenameSpeaker = (id: string, name: string) => {
-    if (!transcript) return;
-    onUpdateTranscript(renameSpeaker(transcript, id, name));
+    dispatch({ type: 'COMMIT', mutate: r => renameSpeaker(r, id, name) });
   };
 
   const handleRemoveSpeaker = (id: string) => {
-    if (!transcript) return;
-    onUpdateTranscript(removeSpeaker(transcript, id));
+    dispatch({ type: 'COMMIT', mutate: r => removeSpeaker(r, id) });
+  };
+
+  const handleSaveChanges = () => {
+    if (!draft) return;
+    onUpdateTranscript(draft);
+    dispatch({ type: 'RESET', transcript: draft });
+  };
+
+  const handleDiscardChanges = () => {
+    dispatch({ type: 'RESET', transcript });
   };
 
   return (
@@ -78,8 +196,38 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
         <span className="transcript-title">
           {transcript ? transcript.filename : 'Transcript'}
         </span>
-        {transcript && (
+        {draft && (
           <div className="transcript-actions">
+            {(state.undoStack.length > 0 || state.redoStack.length > 0) && (
+              <>
+                <button
+                  className="btn-icon"
+                  disabled={state.undoStack.length === 0}
+                  onClick={() => dispatch({ type: 'UNDO' })}
+                  title="Undo (Ctrl+Z)"
+                >
+                  ↶
+                </button>
+                <button
+                  className="btn-icon"
+                  disabled={state.redoStack.length === 0}
+                  onClick={() => dispatch({ type: 'REDO' })}
+                  title="Redo (Ctrl+Shift+Z)"
+                >
+                  ↷
+                </button>
+              </>
+            )}
+            {dirty && (
+              <>
+                <button className="btn-ghost" onClick={handleDiscardChanges}>
+                  Discard changes
+                </button>
+                <button className="btn-primary" onClick={handleSaveChanges}>
+                  Save changes
+                </button>
+              </>
+            )}
             <button
               className={editMode ? 'btn-secondary btn-active' : 'btn-secondary'}
               disabled={!editable}
@@ -98,9 +246,9 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
         )}
       </div>
 
-      {transcript && editMode && (
+      {draft && editMode && (
         <SpeakerRoster
-          speakers={transcript.speakers ?? []}
+          speakers={draft.speakers ?? []}
           onAdd={handleAddSpeaker}
           onRename={handleRenameSpeaker}
           onRemove={handleRemoveSpeaker}
@@ -108,27 +256,28 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
       )}
 
       <div className="transcript-body">
-        {!transcript ? (
+        {!draft ? (
           <div className="transcript-empty">
             <span className="empty-icon">📄</span>
             <span>Select a completed file to view its transcript</span>
           </div>
-        ) : transcript.segments.length === 0 ? (
+        ) : draft.segments.length === 0 ? (
           <div className="transcript-empty">
             <span className="empty-icon">🤔</span>
             <span>No speech detected in this file</span>
           </div>
         ) : (
-          transcript.segments.map((seg, i) => (
+          draft.segments.map((seg, i) => (
             <SegmentRow
               key={seg.id}
               segment={seg}
-              speakers={transcript.speakers ?? []}
+              speakers={draft.speakers ?? []}
               editMode={editMode}
-              canMergeNext={i < transcript.segments.length - 1}
+              canMergeNext={i < draft.segments.length - 1}
               onSplit={cursorPos => handleSplit(i, cursorPos)}
               onMergeNext={() => handleMergeNext(i)}
               onAssignSpeaker={speakerId => handleAssignSpeaker(i, speakerId)}
+              onTextChange={text => handleTextChange(i, text)}
             />
           ))
         )}

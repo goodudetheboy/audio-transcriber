@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Speaker, TranscriptSegment } from '../types';
 import { formatTimestamp } from '../lib/formatters';
 import { speakerColor } from '../lib/transcript';
@@ -11,6 +11,7 @@ interface Props {
   onSplit: (cursorPos: number) => void;
   onMergeNext: () => void;
   onAssignSpeaker: (speakerId: string | undefined) => void;
+  onTextChange: (text: string) => void;
 }
 
 export default function SegmentRow({
@@ -21,13 +22,28 @@ export default function SegmentRow({
   onSplit,
   onMergeNext,
   onAssignSpeaker,
+  onTextChange,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const speaker = speakers.find(s => s.id === segment.speakerId);
+  const [draftText, setDraftText] = useState(segment.text);
+
+  useEffect(() => {
+    setDraftText(segment.text);
+  }, [segment.text]);
 
   const handleSplit = () => {
     const pos = textareaRef.current?.selectionStart ?? 0;
     onSplit(pos);
+  };
+
+  const handleBlur = () => {
+    const trimmed = draftText.trim();
+    if (trimmed && trimmed !== segment.text) {
+      onTextChange(draftText);
+    } else {
+      setDraftText(segment.text);
+    }
   };
 
   return (
@@ -45,9 +61,10 @@ export default function SegmentRow({
           <textarea
             ref={textareaRef}
             className="segment-textarea"
-            readOnly
-            rows={Math.max(1, Math.ceil(segment.text.length / 60))}
-            value={segment.text}
+            rows={Math.max(1, Math.ceil(draftText.length / 60))}
+            value={draftText}
+            onChange={e => setDraftText(e.target.value)}
+            onBlur={handleBlur}
           />
         ) : (
           <span className="segment-text">{segment.text}</span>

@@ -20,18 +20,28 @@ export default function App() {
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [computeMode, setComputeMode] = useState<ComputeDevice | null>(null);
+  const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
   const settingsRef = useRef(settings);
   const computeModeRef = useRef(computeMode);
   const processingRef = useRef<string | null>(null);
   const filesRef = useRef(files);
+  const activeFileIdRef = useRef(activeFileId);
+  const hasUnsavedEditsRef = useRef(hasUnsavedEdits);
   // Accumulates segments across chunks keyed by file id
   const chunkAccRef = useRef<Map<string, { segments: TranscriptSegment[]; createdAt: number; filename: string }>>(new Map());
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { computeModeRef.current = computeMode; }, [computeMode]);
   useEffect(() => { filesRef.current = files; }, [files]);
+  useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
+  useEffect(() => { hasUnsavedEditsRef.current = hasUnsavedEdits; }, [hasUnsavedEdits]);
+
+  const confirmDiscard = useCallback(
+    () => !hasUnsavedEdits || window.confirm('Discard unsaved changes?'),
+    [hasUnsavedEdits],
+  );
 
   // Detect WebGPU at startup so the default device is accurate
   useEffect(() => {
@@ -117,7 +127,10 @@ export default function App() {
           return exists ? h.map(r => r.id === msg.id ? record : r) : [record, ...h];
         });
 
-        if (msg.chunkIndex === 0) setActiveFileId(msg.id);
+        if (msg.chunkIndex === 0) {
+          const switchingAway = activeFileIdRef.current !== null && activeFileIdRef.current !== msg.id;
+          if (!(switchingAway && hasUnsavedEditsRef.current)) setActiveFileId(msg.id);
+        }
 
         setFiles(prev => prev.map(f => f.id === msg.id ? {
           ...f,
@@ -185,16 +198,18 @@ export default function App() {
   }, []);
 
   const removeFile = useCallback((id: string) => {
+    if (id === activeFileId && !confirmDiscard()) return;
     chunkAccRef.current.delete(id);
     setFiles(prev => prev.filter(f => f.id !== id));
     setActiveFileId(prev => (prev === id ? null : prev));
-  }, []);
+  }, [activeFileId, confirmDiscard]);
 
   const handleDeleteHistory = useCallback(async (id: string) => {
+    if (id === activeFileId && !confirmDiscard()) return;
     await deleteTranscript(id);
     setHistory(h => h.filter(r => r.id !== id));
     setActiveFileId(prev => (prev === id ? null : prev));
-  }, []);
+  }, [activeFileId, confirmDiscard]);
 
   const handleUpdateTranscript = useCallback((updated: TranscriptRecord) => {
     // Update state immediately (matching the CHUNK_DONE pattern above) rather than
@@ -251,7 +266,7 @@ export default function App() {
               <FileQueue
                 files={files}
                 activeId={activeFileId}
-                onSelect={setActiveFileId}
+                onSelect={id => { if (confirmDiscard()) setActiveFileId(id); }}
                 onRemove={removeFile}
               />
             )}
@@ -259,6 +274,7 @@ export default function App() {
               transcript={activeTranscript}
               editable={activeTranscriptEditable}
               onUpdateTranscript={handleUpdateTranscript}
+              onDirtyChange={setHasUnsavedEdits}
             />
           </div>
         )}
@@ -268,7 +284,7 @@ export default function App() {
         <HistoryPanel
           history={history}
           activeId={activeFileId}
-          onSelect={id => { setActiveFileId(id); setShowHistory(false); }}
+          onSelect={id => { if (confirmDiscard()) { setActiveFileId(id); setShowHistory(false); } }}
           onDelete={handleDeleteHistory}
           onClose={() => setShowHistory(false)}
         />
