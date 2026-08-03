@@ -391,6 +391,22 @@ button:disabled:hover { transform: none; }
   min-width: 44px;
 }
 
+.segment-time-input {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+  width: 56px;
+  padding: 1px 4px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-card);
+  cursor: text;
+}
+.segment-time-input:focus { outline: none; border-color: var(--accent-light); }
+
 .segment-text {
   font-size: 14px;
   color: var(--text);

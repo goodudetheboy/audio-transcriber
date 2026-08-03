@@ -80,6 +80,15 @@ export function editSegmentText(
   return segments.map((seg, i) => (i === index ? { ...seg, text: trimmed } : seg));
 }
 
+export function setSegmentStart(
+  segments: TranscriptSegment[],
+  index: number,
+  start: number,
+): TranscriptSegment[] {
+  if (start === segments[index]?.start) return segments;
+  return segments.map((seg, i) => (i === index ? { ...seg, start } : seg));
+}
+
 export function assignSpeaker(
   segments: TranscriptSegment[],
   index: number,

@@ -8,6 +8,7 @@ import {
   mergeWithNext,
   removeSpeaker,
   renameSpeaker,
+  setSegmentStart,
   splitSegmentAt,
 } from '../lib/transcript';
 import SegmentRow from './SegmentRow';
@@ -164,6 +165,16 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
     });
   };
 
+  const handleStartChange = (index: number, start: number) => {
+    dispatch({
+      type: 'COMMIT',
+      mutate: r => {
+        const segments = setSegmentStart(r.segments, index, start);
+        return segments === r.segments ? r : { ...r, segments };
+      },
+    });
+  };
+
   const handleAssignSpeaker = (index: number, speakerId: string | undefined) => {
     dispatch({ type: 'COMMIT', mutate: r => ({ ...r, segments: assignSpeaker(r.segments, index, speakerId) }) });
   };
@@ -278,6 +289,7 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
               onMergeNext={() => handleMergeNext(i)}
               onAssignSpeaker={speakerId => handleAssignSpeaker(i, speakerId)}
               onTextChange={text => handleTextChange(i, text)}
+              onStartChange={start => handleStartChange(i, start)}
             />
           ))
         )}

@@ -24,23 +24,30 @@ for the original design doc.
   chunked Whisper transcription, runs off the main thread
 - `src/components/` — DropZone, FileQueue, HistoryPanel, SettingsModal,
   TranscriptViewer (segment list + edit mode, undo/redo, save/discard draft state),
-  SegmentRow (per-segment split/merge/text-edit/speaker-assign UI), SpeakerRoster
-  (add/rename/remove speakers)
+  SegmentRow (per-segment split/merge/text-edit/start-time-edit/speaker-assign UI),
+  SpeakerRoster (add/rename/remove speakers)
 - `src/lib/storage.ts` — IndexedDB wrapper
 - `src/lib/transcript.ts` — pure transcript-editing helpers (split/merge segments,
-  edit text, assign/add/rename/remove speakers)
+  edit text, set segment start time, assign/add/rename/remove speakers)
 - `src/lib/formatters.ts` — segment/timestamp formatting for display and export
 - `src/types.ts` — shared types, including the worker message protocol
 
 ## Transcript editing
 
 Transcripts are editable once a file finishes transcribing (`TranscriptViewer`'s
-"Edit" toggle). Edits (split/merge segments, in-place text edits, speaker
-assignment) apply to a local draft (`useReducer` in `TranscriptViewer`, with a
-full-snapshot undo/redo stack) and are only written to IndexedDB when the user
-clicks "Save changes" — nothing is persisted on every keystroke/click. Switching
-files or history items with unsaved edits prompts for confirmation instead of
-silently discarding them.
+"Edit" toggle). Edits (split/merge segments, in-place text edits, start-timestamp
+edits, speaker assignment) apply to a local draft (`useReducer` in
+`TranscriptViewer`, with a full-snapshot undo/redo stack) and are only written to
+IndexedDB when the user clicks "Save changes" — nothing is persisted on every
+keystroke/click. Switching files or history items with unsaved edits prompts for
+confirmation instead of silently discarding them.
+
+Timestamp edits only cover a segment's `start` (parsed/formatted via
+`parseTimestamp`/`formatTimestamp` in `lib/formatters.ts`, `mm:ss` or `h:mm:ss`);
+`end` isn't shown or independently editable in the UI. No cross-segment
+validation is applied — edited/split/merged segments can end up out of order or
+overlapping and that's left as-is, matching how text edits/splits/merges don't
+cross-validate against siblings either.
 
 ## Shipping changes
 
