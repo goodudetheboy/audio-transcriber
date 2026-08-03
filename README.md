@@ -9,6 +9,9 @@ with WebGPU acceleration and automatic CPU fallback.
 
 - Drag-and-drop batch queue — process multiple files in sequence
 - Timestamped transcript, viewable in-app, copyable, and downloadable as `.txt`
+- Editable transcripts once a file finishes: split/merge segments, edit text
+  in place, assign speaker labels, with undo/redo and explicit save/discard
+  (edits are kept as a local draft until you save)
 - Local history (IndexedDB) of past transcripts
 - Choice of Whisper model size (fast / balanced / accurate) in Settings
 - Handles large files (multi-GB) via ffmpeg's WORKERFS mount

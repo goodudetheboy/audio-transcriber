@@ -22,9 +22,31 @@ for the original design doc.
 - `src/App.tsx` — top-level state, file queue, worker message handling
 - `src/workers/transcription.worker.ts` — the actual pipeline: ffmpeg extraction →
   chunked Whisper transcription, runs off the main thread
-- `src/components/` — DropZone, FileQueue, TranscriptViewer, HistoryPanel, SettingsModal
+- `src/components/` — DropZone, FileQueue, HistoryPanel, SettingsModal,
+  TranscriptViewer (segment list + edit mode, undo/redo, save/discard draft state),
+  SegmentRow (per-segment split/merge/text-edit/speaker-assign UI), SpeakerRoster
+  (add/rename/remove speakers)
 - `src/lib/storage.ts` — IndexedDB wrapper
+- `src/lib/transcript.ts` — pure transcript-editing helpers (split/merge segments,
+  edit text, assign/add/rename/remove speakers)
+- `src/lib/formatters.ts` — segment/timestamp formatting for display and export
 - `src/types.ts` — shared types, including the worker message protocol
+
+## Transcript editing
+
+Transcripts are editable once a file finishes transcribing (`TranscriptViewer`'s
+"Edit" toggle). Edits (split/merge segments, in-place text edits, speaker
+assignment) apply to a local draft (`useReducer` in `TranscriptViewer`, with a
+full-snapshot undo/redo stack) and are only written to IndexedDB when the user
+clicks "Save changes" — nothing is persisted on every keystroke/click. Switching
+files or history items with unsaved edits prompts for confirmation instead of
+silently discarding them.
+
+## Shipping changes
+
+Whenever asked to ship/land a change, update CLAUDE.md to reflect it (stack,
+key files, or behavior notes as relevant), and update README.md too if the
+change is user-facing (new/changed features, setup, or usage).
 
 ## Commands
 
