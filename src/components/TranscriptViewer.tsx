@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useReducer, useRef } from 'react';
-import type { TranscriptRecord } from '../types';
-import { segmentsToText } from '../lib/formatters';
+import type { TranscriptRecord, Speaker } from '../types';
+import { segmentsToText, segmentsToSrt, segmentsToVtt } from '../lib/formatters';
 import {
   addSpeaker,
   assignSpeaker,
@@ -26,6 +26,14 @@ interface DraftState {
   undoStack: TranscriptRecord[];
   redoStack: TranscriptRecord[];
 }
+
+type ExportFormat = 'txt' | 'srt' | 'vtt';
+
+const EXPORTERS: Record<ExportFormat, { toString: (segs: TranscriptRecord['segments'], speakers: Speaker[]) => string; mime: string }> = {
+  txt: { toString: segmentsToText, mime: 'text/plain' },
+  srt: { toString: segmentsToSrt, mime: 'application/x-subrip' },
+  vtt: { toString: segmentsToVtt, mime: 'text/vtt' },
+};
 
 type DraftAction =
   | { type: 'RESYNC'; transcript: TranscriptRecord | undefined }
@@ -135,14 +143,15 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
     setTimeout(() => setCopied(false), 2000);
   }, [draft]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((format: ExportFormat) => {
     if (!draft) return;
-    const text = segmentsToText(draft.segments, draft.speakers ?? []);
-    const blob = new Blob([text], { type: 'text/plain' });
+    const { toString, mime } = EXPORTERS[format];
+    const text = toString(draft.segments, draft.speakers ?? []);
+    const blob = new Blob([text], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = draft.filename.replace(/\.[^.]+$/, '') + '_transcript.txt';
+    a.download = draft.filename.replace(/\.[^.]+$/, '') + '_transcript.' + format;
     a.click();
     URL.revokeObjectURL(url);
   }, [draft]);
@@ -250,8 +259,14 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
             <button className="btn-ghost" onClick={handleCopy}>
               {copied ? '✓ Copied' : 'Copy all'}
             </button>
-            <button className="btn-secondary" onClick={handleSave}>
+            <button className="btn-secondary" onClick={() => handleSave('txt')}>
               Save .txt
+            </button>
+            <button className="btn-secondary" onClick={() => handleSave('srt')}>
+              Save .srt
+            </button>
+            <button className="btn-secondary" onClick={() => handleSave('vtt')}>
+              Save .vtt
             </button>
           </div>
         )}
