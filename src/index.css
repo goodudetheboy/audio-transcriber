@@ -351,6 +351,35 @@ button:disabled:hover { transform: none; }
 
 .transcript-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
+.save-dropdown { position: relative; }
+
+.save-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+}
+
+.save-dropdown-item {
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.save-dropdown-item:hover { background: var(--accent-lighter); color: var(--accent); }
+
 .transcript-body {
   flex: 1;
   padding: 18px;

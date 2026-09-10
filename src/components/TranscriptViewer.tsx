@@ -29,10 +29,10 @@ interface DraftState {
 
 type ExportFormat = 'txt' | 'srt' | 'vtt';
 
-const EXPORTERS: Record<ExportFormat, { toString: (segs: TranscriptRecord['segments'], speakers: Speaker[]) => string; mime: string }> = {
-  txt: { toString: segmentsToText, mime: 'text/plain' },
-  srt: { toString: segmentsToSrt, mime: 'application/x-subrip' },
-  vtt: { toString: segmentsToVtt, mime: 'text/vtt' },
+const EXPORTERS: Record<ExportFormat, { label: string; toString: (segs: TranscriptRecord['segments'], speakers: Speaker[]) => string; mime: string }> = {
+  txt: { label: 'Plain text (.txt)', toString: segmentsToText, mime: 'text/plain' },
+  srt: { label: 'SubRip (.srt)', toString: segmentsToSrt, mime: 'application/x-subrip' },
+  vtt: { label: 'WebVTT (.vtt)', toString: segmentsToVtt, mime: 'text/vtt' },
 };
 
 type DraftAction =
@@ -80,6 +80,8 @@ function draftReducer(state: DraftState, action: DraftAction): DraftState {
 export default function TranscriptViewer({ transcript, editable, onUpdateTranscript, onDirtyChange }: Props) {
   const [copied, setCopied] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
   const [state, dispatch] = useReducer(
     draftReducer,
     transcript,
@@ -101,7 +103,19 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
   useEffect(() => {
     setEditMode(false);
     setCopied(false);
+    setSaveMenuOpen(false);
   }, [transcript?.id, editable]);
+
+  useEffect(() => {
+    if (!saveMenuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (saveMenuRef.current && !saveMenuRef.current.contains(e.target as Node)) {
+        setSaveMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [saveMenuOpen]);
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -154,6 +168,7 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
     a.download = draft.filename.replace(/\.[^.]+$/, '') + '_transcript.' + format;
     a.click();
     URL.revokeObjectURL(url);
+    setSaveMenuOpen(false);
   }, [draft]);
 
   const handleSplit = (index: number, cursorPos: number) => {
@@ -259,15 +274,20 @@ export default function TranscriptViewer({ transcript, editable, onUpdateTranscr
             <button className="btn-ghost" onClick={handleCopy}>
               {copied ? '✓ Copied' : 'Copy all'}
             </button>
-            <button className="btn-secondary" onClick={() => handleSave('txt')}>
-              Save .txt
-            </button>
-            <button className="btn-secondary" onClick={() => handleSave('srt')}>
-              Save .srt
-            </button>
-            <button className="btn-secondary" onClick={() => handleSave('vtt')}>
-              Save .vtt
-            </button>
+            <div className="save-dropdown" ref={saveMenuRef}>
+              <button className="btn-secondary" onClick={() => setSaveMenuOpen(v => !v)}>
+                Save ▾
+              </button>
+              {saveMenuOpen && (
+                <div className="save-dropdown-menu">
+                  {(Object.keys(EXPORTERS) as ExportFormat[]).map(format => (
+                    <button key={format} className="save-dropdown-item" onClick={() => handleSave(format)}>
+                      {EXPORTERS[format].label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
