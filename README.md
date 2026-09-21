@@ -1,5 +1,10 @@
 # Audio & Video Transcriber
 
+> **This repo has moved.** Audio Transcriber is now part of
+> [toolbox.vuongho.me](https://toolbox.vuongho.me/audio-transcriber/) —
+> use that link going forward. This repo is archived (read-only) and kept
+> around for history only.
+
 Drop an audio or video file in your browser and get back timestamped text —
 no upload, no backend, no account. Everything runs client-side using
 ffmpeg.wasm (audio extraction) and Whisper via transformers.js (speech-to-text),
